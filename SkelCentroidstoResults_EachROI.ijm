@@ -2,18 +2,13 @@
 	http://imagejdocu.tudor.lu/doku.php?id=plugin:morphology:morphological_operators_for_imagej:start
 	http://www.mecourse.com/landinig/software/software.html
 	Modified to add coordinates to Results Table: Peter J. Lee NHMFL  7/20-29/2016
-	v180102	This is ~30% faster than MCentroids by using the fast built-in ImageJ skeletonize command first.
+	v180102	This is ~10-30% faster than MCentroids by using the fast built-in ImageJ skeletonize command first, the results are similar and the co-ordinates remain inside the objects
 */
-macro "Add skeleton centroid coordinates to Results Table" {
-	saveSettings();
-	run("Options...", "iterations=1 white count=1"); /* set white background */
-	setOption("BlackBackground", false);
-	run("Colors...", "foreground=black background=white selection=yellow"); /* set colors */
-	run("Appearance...", " "); /* do not use Inverting LUT */					   
+macro "Add skeleton centroid coordinates to Results Table" { 
 	workingTitle = getTitle();
 	if (!checkForPlugin("morphology_collection")) restoreExit("Exiting: Gabriel Landini's morphology suite is needed to run this macro.");
-	binaryCheck(workingTitle);
-	checkForRoiManager();
+	binaryCheck(workingTitle); /* Makes sure image is binary and sets to white background, black objects */
+	checkForRoiManager(); /* This macro uses ROIs and a Results table that matches in count */
 	roiOriginalCount = roiManager("count");
 	setBatchMode(true); /* batch mode on */
 	start = getTime();
@@ -56,24 +51,22 @@ macro "Add skeleton centroid coordinates to Results Table" {
 	updateResults();
 	run("Select None");
 	setBatchMode("exit & display"); /* exit batch mode */
-	restoreSettings();
-	showStatus("MC Function Finished: " + roiManager("count") + " objects analyzed in " + (getTime()-start)/1000 + "s.");
+	showStatus("SkelC Function Finished: " + roiManager("count") + " objects analyzed in " + (getTime()-start)/1000 + "s.");
 	beep(); wait(300); beep(); wait(300); beep();
 	run("Collect Garbage"); 
 }
 /*-----------------functions---------------------*/
 
 	function binaryCheck(windowTitle) { /* for black objects on white background */
+		/* v180104 added line to remove inverting LUT and changed to auto default threshold */
 		selectWindow(windowTitle);
 		if (is("binary")==0) run("8-bit");
 		/* Quick-n-dirty threshold if not previously thresholded */
 		getThreshold(t1,t2); 
 		if (t1==-1)  {
 			run("8-bit");
-			setThreshold(0, 128);
-			setOption("BlackBackground", true);
+			run("Auto Threshold", "method=Default");
 			run("Convert to Mask");
-			run("Invert");
 			}
 		/* Make sure black objects on white background for consistency */
 		if (((getPixel(0, 0))==0 || (getPixel(0, 1))==0 || (getPixel(1, 0))==0 || (getPixel(1, 1))==0))
@@ -82,13 +75,16 @@ macro "Add skeleton centroid coordinates to Results Table" {
 			i.e. the corner 4 pixels should now be all black, if not, we have a "border issue". */
 		if (((getPixel(0, 0))+(getPixel(0, 1))+(getPixel(1, 0))+(getPixel(1, 1))) != 4*(getPixel(0, 0)) ) 
 				restoreExit("Border Issue"); 	
+		if (is("Inverting LUT")==true) run("Invert LUT");
 	}
 	function checkForRoiManager() {
-		/* v161109 adds the return of the updated ROI count and also adds dialog if there are already entries just in case . . */
+		/* v161109 adds the return of the updated ROI count and also adds dialog if there are already entries just in case . .
+			v180104 only asks about ROIs if there is a mismatch with the results */
 		nROIs = roiManager("count");
-		nRES = nResults; /* not really needed except to provide useful information below */
-		if (nROIs==0) runAnalyze = true;
-		else runAnalyze = getBoolean("There are already " + nROIs + " in the ROI manager; do you want to clear the ROI manager and reanalyze?");
+		nRES = nResults; /* Used to check for ROIs:Results mismatch */
+		if(nROIs==0) runAnalyze = true; /* Assumes that ROIs are required and that is why this function is being called */
+		else if(nROIs!=nRES) runAnalyze = getBoolean("There are " + nRES + " results and " + nROIs + " ROIs; do you want to clear the ROI manager and reanalyze?");
+		else runAnalyze = false;
 		if (runAnalyze) {
 			roiManager("reset");
 			Dialog.create("Analysis check");
